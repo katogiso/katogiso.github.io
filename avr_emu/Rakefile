@@ -1,0 +1,5 @@
+task default: :copy
+
+task :copy do
+  FileUtils.copy_entry('/home/so/work/javascript/avr/text/', './')
+end

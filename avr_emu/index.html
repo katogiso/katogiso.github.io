@@ -89,6 +89,10 @@
 <script src="io_regs.js"></script>
 <script>
 
+ //-----------------------------------------------------------------------------
+ // Global variables
+ //----------------------------------------------------------------------------- 
+
  var input_area     = document.getElementById("input");
  var input_pc       = document.getElementById("input_pc");
 
@@ -106,6 +110,9 @@
  var parsed_source = {};
  var flags         = {};
 
+ //-----------------------------------------------------------------------------
+ // Initialize the text area
+ //----------------------------------------------------------------------------- 
  function defaultText(){
      input_area.value = "\
 ;This is sample code \n\
@@ -114,9 +121,11 @@ FLAG: LDI  0x9,0xA \n\
 FLAG2: \n\
       JMP FLAG \n\
 "
-     showPc();
  }
 
+ //-----------------------------------------------------------------------------
+ // Event handlers 
+ //----------------------------------------------------------------------------- 
  function clickSetPc(){
      if( parseInt(input_pc.value) != NaN && parseInt(input_pc.value) < max_pc ){
          pc = parseInt(input_pc.value);
@@ -129,7 +138,7 @@ FLAG2: \n\
      
      source.forEach( function(value,index){
          //extract flags from textarea
-         Object.assign( flags,         extract_flags( value, index ) );
+         Object.assign( flags, extractFlags( value, index ) );
 
          //
          var tmp = {};
@@ -141,44 +150,8 @@ FLAG2: \n\
      showResults( flags, parsed_source );
  }
 
- function showResults( flags, parsed_source ){
-     
-     flags_area.innerText = "";
-     
-     for( var i = flashrom_table.childElementCount - 1; i >= 0  ; i-- ){
-         flashrom_table.removeChild( flashrom_table.children[i] );
-     }
-     for( var i = gp_regs_table.childElementCount - 1; i >= 0  ; i-- ){
-         gp_regs_table.removeChild( gp_regs_table.children[i] );
-     }
-     for( var i = io_regs_table.childElementCount - 1; i >= 0  ; i-- ){
-         io_regs_table.removeChild( io_regs_table.children[i] );
-     }
-     
-     Object.keys( flags ).forEach( function( value,index ) {
-         flags_area.innerText += value + " => " + flags[value] + "\n";
-     })
-     
-     Object.keys( parsed_source ).forEach( function( value ){     
-         var tr = document.createElement('tr');
-         var td = document.createElement('td');
-         td.innerHTML = value;
-         tr.appendChild(td);
-
-         td = document.createElement('td');
-         td.innerHTML = parsed_source[value];
-         tr.appendChild(td)
-
-         flashrom_table.appendChild(tr);
-     })
-
-     add_table( gp_regs_table, gp_regs );
-     add_table( io_regs_table, io_regs );
-     
- }
 
  function clickClear(){
-     input_area.value     = "";
      flags_area.innerText = "";
      steps_area.innerText = "";
  }
@@ -188,18 +161,32 @@ FLAG2: \n\
      nextCycle();
  }
 
+ function clickResetPc(){
+     pc = 0;
+     showPc();
+ }
+
+ //-----------------------------------------------------------------------------
+ // TCM 
+ //----------------------------------------------------------------------------- 
  function nextCycle(){
+     // show current cycle
      showPc();
 
+     // show next code.
      steps_area.innerText = parsed_source[pc];
+
      executeInstruction(parsed_source[pc]);
+
      showResults( flags, parsed_source );
-     
      if(pc < max_pc - 1 ) {
          pc += 1;
      }
  }
 
+ //-----------------------------------------------------------------------------
+ // Fetch the instruction, and execute.
+ //----------------------------------------------------------------------------- 
  function executeInstruction(instruction){
      var words    = instruction.split(" ");
      var opecode  = words[0];
@@ -220,34 +207,28 @@ FLAG2: \n\
      }
  }
 
- function clickResetPc(){
-     pc = 0;
-     showPc();
+ function numParser( stringNum ){
+     var cardinals = getCardinals( stringNum );
+     return parseInt(stringNum, cardinals );
  }
 
- function showPc() {
-     pc_area.innerText = pc;
- }
-
-
- function extract_flags( line, index ) {
-     var flags = {};
-     if( line.includes(":") ) {
-         var name = line.replace( /^\s*([a-zA-Z_0-9]+):.*$/, "$1" );
-         flags[name] = index;
+ function getCardinals( stringNum ){
+     if( stringNum.startsWith("0b") ) {
+         return 2;
+     } else if( stringNum.startsWith("0x") ){
+         return 16;
      }
-     return flags;
+     return 10;
  }
 
+ //-----------------------------------------------------------------------------
+ // Preprocessor of mnemonic
+ //----------------------------------------------------------------------------- 
  function preprocessor( source ) {
-
-
      var remove_comments = source.replace(/;.*$/mg, "").replace(/:\s*\n/mg, ": ").split(/\n/);
-
      var remove_spaces   = remove_comments.map( function (value) {
          return value.trim().replace(/\s+/g, " ");
      });
-
      //remove the empty line
      var pattern = new RegExp(/^\s*$/);
      var remove_empty_line = remove_spaces.filter(function(value){
@@ -256,8 +237,57 @@ FLAG2: \n\
      return remove_empty_line;
  }
 
+ function extractFlags( line, index ) {
+     var flags = {};
+     if( line.includes(":") ) {
+         var name = line.replace( /^\s*([a-zA-Z_0-9]+):.*$/, "$1" );
+         flags[name] = index;
+     }
+     return flags;
+ }
 
- function add_table( tbody, obj ){
+
+
+ //-----------------------------------------------------------------------------
+ // show the values of rom, GP regs, and I/O regs.
+ //----------------------------------------------------------------------------- 
+ function showResults( flags, parsed_source ){
+     
+     clearText();
+   
+     Object.keys( flags ).forEach( function( value,index ) {
+         flags_area.innerText += value + " => " + flags[value] + "\n";
+     })
+     
+     Object.keys( parsed_source ).forEach( function( value ){     
+         var tr = document.createElement('tr');
+         add_td( tr, parsed_source[value] );
+         add_td( tr, parsed_source[value] );
+         flashrom_table.appendChild(tr);
+     })
+
+     add_reg_table( gp_regs_table, gp_regs );
+     add_reg_table( io_regs_table, io_regs );
+ }
+
+ function clearText(){
+     flags_area.innerText = "";
+     for( var i = flashrom_table.childElementCount - 1; i >= 0  ; i-- ){
+         flashrom_table.removeChild( flashrom_table.children[i] );
+     }
+     for( var i = gp_regs_table.childElementCount - 1; i >= 0  ; i-- ){
+         gp_regs_table.removeChild( gp_regs_table.children[i] );
+     }
+     for( var i = io_regs_table.childElementCount - 1; i >= 0  ; i-- ){
+         io_regs_table.removeChild( io_regs_table.children[i] );
+     }
+ }
+
+ function showPc() {
+     pc_area.innerText = pc;
+ }
+
+ function add_reg_table( tbody, obj ){
      var size          = obj.size;
      var start_address = obj.start_address;
 
@@ -282,20 +312,5 @@ FLAG2: \n\
      tr.appendChild(td);
  }
 
- function numParser( stringNum ){
-     var cardinals = getCardinals( stringNum );
-     return parseInt(stringNum, cardinals );
- }
-
- function getCardinals( stringNum ){
-     if( stringNum.startsWith("0b") ) {
-         return 2;
-     } else if( stringNum.startsWith("0x") ){
-         return 16;
-     }
-     return 10;
- }
  
-
-
 </script>
