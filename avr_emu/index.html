@@ -1,0 +1,301 @@
+<head>
+    <link href="https://fonts.googleapis.com/css?family=Source+Code+Pro" rel="stylesheet">
+    <style>
+     * {
+         font-family: 'Source Code Pro', monospace;
+     }
+    </style>
+</head>
+<body onload="defaultText()" >
+
+    <div>
+        <textarea id="input" cols="80" rows="16" ></textarea>
+    </div>
+
+    <div>
+        <button name="clearButton" type="button" onclick="clickClear()">
+            clear
+        </button>
+
+        <button name="loadButton" type="button" onclick="clickLoad()">
+            load
+        </button>
+
+        <button name="nextButton" type="button" onclick="clickNext()">
+            next
+        </button>
+
+        <button name="resetPcButton" type="button" onclick="clickResetPc()">
+            reset pc
+        </button>
+
+    </div>
+
+    <div>
+        <h2>Current program</h2>
+        <p id="steps"></p>
+        <h2>Flags</h2>
+        <p id="flags"></p>
+        <h2>Program Counter</h2>
+        <p id="pc"></p>
+    </div>
+
+    <div>
+        <input id="input_pc" type="number" >
+        <button name="resetPcButton" type="button" onclick="clickSetPc()">
+            set pc
+        </button>
+    </div>
+
+    <div>
+        <h2>Program memory</h2>
+            <h3>Flash ROM</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>address</th>
+                        <th>mnemonic</th>
+                    </tr>
+                </thead>
+                <tbody id="flashrom">
+                </tbody>
+            </table>
+            
+            <h2>Data memory</h2>
+                <h3>General porpose register</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>address(0d)</th><th>address(0x)</th><th>data</th><th>description</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gp_regs">
+                    </tbody>
+                </table>
+                
+                <h3>I/O register</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>address(0d)</th><th>address(0x)</th><th>data[0b](0x)</th><th>description</th>
+                        </tr>
+                    </thead>
+                    <tbody id="io_regs">
+                    </tbody>
+                </table>
+    </div>
+</body>
+<script src="gp_regs.js"></script>
+<script src="io_regs.js"></script>
+<script>
+
+ var input_area     = document.getElementById("input");
+ var input_pc       = document.getElementById("input_pc");
+
+ var steps_area     = document.getElementById("steps");
+ var flags_area     = document.getElementById("flags");
+ var pc_area        = document.getElementById("pc");
+
+ var flashrom_table = document.getElementById("flashrom");
+ var gp_regs_table  = document.getElementById("gp_regs");
+ var io_regs_table  = document.getElementById("io_regs");
+
+ var pc         = 0;
+ var max_pc     = 512;
+
+ var parsed_source = {};
+ var flags         = {};
+
+ function defaultText(){
+     input_area.value = "\
+;This is sample code \n\
+FLAG: LDI  0x9,0xA \n\
+      AND Rd,Rr    ;comments hoge \n\
+FLAG2: \n\
+      JMP FLAG \n\
+"
+     showPc();
+ }
+
+ function clickSetPc(){
+     if( parseInt(input_pc.value) != NaN && parseInt(input_pc.value) < max_pc ){
+         pc = parseInt(input_pc.value);
+         showPc();
+     }
+ }
+
+ function clickLoad(){
+     var source        = preprocessor( input_area.value );
+     
+     source.forEach( function(value,index){
+         //extract flags from textarea
+         Object.assign( flags,         extract_flags( value, index ) );
+
+         //
+         var tmp = {};
+         tmp[index.toString()] = value.replace(/^\s*.*:\s*/, "" ); 
+         Object.assign( parsed_source, tmp );
+     }) 
+
+     //show the results
+     showResults( flags, parsed_source );
+ }
+
+ function showResults( flags, parsed_source ){
+     
+     flags_area.innerText = "";
+     
+     for( var i = flashrom_table.childElementCount - 1; i >= 0  ; i-- ){
+         flashrom_table.removeChild( flashrom_table.children[i] );
+     }
+     for( var i = gp_regs_table.childElementCount - 1; i >= 0  ; i-- ){
+         gp_regs_table.removeChild( gp_regs_table.children[i] );
+     }
+     for( var i = io_regs_table.childElementCount - 1; i >= 0  ; i-- ){
+         io_regs_table.removeChild( io_regs_table.children[i] );
+     }
+     
+     Object.keys( flags ).forEach( function( value,index ) {
+         flags_area.innerText += value + " => " + flags[value] + "\n";
+     })
+     
+     Object.keys( parsed_source ).forEach( function( value ){     
+         var tr = document.createElement('tr');
+         var td = document.createElement('td');
+         td.innerHTML = value;
+         tr.appendChild(td);
+
+         td = document.createElement('td');
+         td.innerHTML = parsed_source[value];
+         tr.appendChild(td)
+
+         flashrom_table.appendChild(tr);
+     })
+
+     add_table( gp_regs_table, gp_regs );
+     add_table( io_regs_table, io_regs );
+     
+ }
+
+ function clickClear(){
+     input_area.value     = "";
+     flags_area.innerText = "";
+     steps_area.innerText = "";
+ }
+
+
+ function clickNext(){
+     nextCycle();
+ }
+
+ function nextCycle(){
+     showPc();
+
+     steps_area.innerText = parsed_source[pc];
+     executeInstruction(parsed_source[pc]);
+     showResults( flags, parsed_source );
+     
+     if(pc < max_pc - 1 ) {
+         pc += 1;
+     }
+ }
+
+ function executeInstruction(instruction){
+     var words    = instruction.split(" ");
+     var opecode  = words[0];
+     if(words.length > 1 ) {
+         var operands = words[1].split(",");
+     }
+
+     switch( opecode ){
+         case "LDI" : 
+             gp_regs[numParser(operands[0])].value = numParser(operands[1]);
+             break;
+         case "JMP" : 
+             pc = flags[operands[0]];
+             break;
+         case "NOP" : 
+         default :
+             break;
+     }
+ }
+
+ function clickResetPc(){
+     pc = 0;
+     showPc();
+ }
+
+ function showPc() {
+     pc_area.innerText = pc;
+ }
+
+
+ function extract_flags( line, index ) {
+     var flags = {};
+     if( line.includes(":") ) {
+         var name = line.replace( /^\s*([a-zA-Z_0-9]+):.*$/, "$1" );
+         flags[name] = index;
+     }
+     return flags;
+ }
+
+ function preprocessor( source ) {
+
+
+     var remove_comments = source.replace(/;.*$/mg, "").replace(/:\s*\n/mg, ": ").split(/\n/);
+
+     var remove_spaces   = remove_comments.map( function (value) {
+         return value.trim().replace(/\s+/g, " ");
+     });
+
+     //remove the empty line
+     var pattern = new RegExp(/^\s*$/);
+     var remove_empty_line = remove_spaces.filter(function(value){
+         return !pattern.test(value);;
+     })
+     return remove_empty_line;
+ }
+
+
+ function add_table( tbody, obj ){
+     var size          = obj.size;
+     var start_address = obj.start_address;
+
+     Object.keys( obj ).forEach( function( reg ){
+         var regIndex      = parseInt( reg );
+         var start_address = obj.start_address;
+         var end_address   = obj.start_address + obj.size - 1 ;
+         if( regIndex >= start_address && regIndex <= end_address ) {
+             var tr = document.createElement('tr');
+             add_td( tr, "0d"+reg                        );
+             add_td( tr, "0x"+parseInt(reg).toString(16) );
+             add_td( tr, "0b"+( '00000000' + obj[reg].value.toString(2)).slice(-8) );
+             add_td( tr, obj[reg].desc  );
+             tbody.appendChild(tr);
+         }
+     })
+ }
+
+ function add_td( tr, text ) {
+     var td = document.createElement('td');
+     td.innerHTML = text;
+     tr.appendChild(td);
+ }
+
+ function numParser( stringNum ){
+     var cardinals = getCardinals( stringNum );
+     return parseInt(stringNum, cardinals );
+ }
+
+ function getCardinals( stringNum ){
+     if( stringNum.startsWith("0b") ) {
+         return 2;
+     } else if( stringNum.startsWith("0x") ){
+         return 16;
+     }
+     return 10;
+ }
+ 
+
+
+</script>
