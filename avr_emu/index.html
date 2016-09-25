@@ -154,6 +154,7 @@ FLAG2: \n\
  function clickClear(){
      flags_area.innerText = "";
      steps_area.innerText = "";
+     clearText();
  }
 
 
@@ -179,9 +180,6 @@ FLAG2: \n\
      executeInstruction(parsed_source[pc]);
 
      showResults( flags, parsed_source );
-     if(pc < max_pc - 1 ) {
-         pc += 1;
-     }
  }
 
  //-----------------------------------------------------------------------------
@@ -197,13 +195,23 @@ FLAG2: \n\
      switch( opecode ){
          case "LDI" : 
              gp_regs[numParser(operands[0])].value = numParser(operands[1]);
+             incrementPC();
              break;
          case "JMP" : 
              pc = flags[operands[0]];
              break;
          case "NOP" : 
-         default :
+             incrementPC();
              break;
+         default :
+             incrementPC();
+             break;
+     }
+ }
+
+ function incrementPC(){
+     if(pc < max_pc - 1 ) {
+         pc += 1;
      }
  }
 
@@ -261,7 +269,7 @@ FLAG2: \n\
      
      Object.keys( parsed_source ).forEach( function( value ){     
          var tr = document.createElement('tr');
-         add_td( tr, parsed_source[value] );
+         add_td( tr, value );
          add_td( tr, parsed_source[value] );
          flashrom_table.appendChild(tr);
      })
